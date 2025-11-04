@@ -1,0 +1,122 @@
+import SwiftUI
+import SerenaCore
+
+struct ChatView: View {
+    @EnvironmentObject private var chatManager: ChatManager
+    @StateObject private var themeManager = ThemeManager.shared
+    @State private var messageText = ""
+    @State private var isComposing = false
+    @FocusState private var isInputFocused: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Chat messages area
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        if let conversation = chatManager.currentConversation {
+                            ForEach(conversation.messages) { message in
+                                MessageBubbleView(message: message)
+                                    .id(message.id)
+                            }
+                        } else {
+                            // Welcome message when no conversation is selected
+                            VStack(spacing: 16) {
+                                Image(systemName: "brain.head.profile")
+                                    .font(.system(size: 64))
+                                    .foregroundColor(themeManager.customColors.primary.opacity(0.6))
+                                
+                                Text("Welcome to SerenaNet")
+                                    .font(.title)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(themeManager.customColors.primary)
+                                
+                                Text("Your AI assistant is ready to help. Start a conversation by typing a message below.")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 32)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.top, 100)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .background(themeManager.customColors.background)
+                .onChange(of: chatManager.currentConversation?.messages.count) { _ in
+                    // Auto-scroll to bottom when new messages arrive
+                    if let lastMessage = chatManager.currentConversation?.messages.last {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+            
+            Divider()
+                .background(themeManager.customColors.border)
+            
+            // Message input area
+            MessageInputView(
+                messageText: $messageText,
+                isComposing: $isComposing,
+                isInputFocused: $isInputFocused,
+                isProcessing: chatManager.isProcessing,
+                onSend: sendMessage,
+                onVoiceInput: startVoiceInput,
+                isVoiceRecording: false, // TODO: Connect to voice manager
+                isVoiceAvailable: true
+            )
+            .background(themeManager.customColors.surface)
+        }
+        .onAppear {
+            // Focus the input field when the view appears
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isInputFocused = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusMessageInput)) { _ in
+            print("🎯 ChatView: Received focus notification")
+            isInputFocused = true
+        }
+        .onExitCommand {
+            // Handle Escape key - could be used to ensure focus
+            print("🎯 ChatView: Escape key pressed, refocusing input")
+            isInputFocused = true
+        }
+    }
+    
+    private func sendMessage() {
+        let trimmedMessage = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedMessage.isEmpty else { return }
+        
+        print("📤 Sending message: \(trimmedMessage)")
+        
+        // Clear the input
+        messageText = ""
+        isComposing = false
+        
+        // Send the message through ChatManager
+        Task {
+            await chatManager.sendMessage(trimmedMessage)
+        }
+        
+        // Keep focus on input
+        isInputFocused = true
+    }
+    
+    private func startVoiceInput() {
+        print("🎤 Voice input requested")
+        // TODO: Implement voice input
+        // For now, just show a placeholder message
+        messageText = "Voice input activated (placeholder)"
+    }
+}
+
+#Preview {
+    ChatView()
+        .environmentObject(ChatManager())
+        .frame(width: 600, height: 400)
+}

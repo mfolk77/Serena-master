@@ -1,0 +1,60 @@
+import SwiftUI
+import SerenaCore
+
+@main
+struct SerenaNetApp: App {
+    @StateObject private var chatManager = ChatManager()
+    @StateObject private var configManager = ConfigManager()
+    
+    init() {
+        print("🚀 SerenaNet Starting...")
+        
+        // Start performance monitoring on app launch
+        Task { @MainActor in
+            PerformanceMonitor.shared.startMonitoring()
+        }
+        
+        // Skip UserNotifications setup to avoid bundle issues
+        print("✅ SerenaNet initialized successfully")
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(chatManager)
+                .environmentObject(configManager)
+                .onAppear {
+                    print("✅ SerenaNet UI loaded successfully")
+                    // Record app startup completion
+                    Task { @MainActor in
+                        PerformanceMonitor.shared.recordAppStartupComplete()
+                    }
+                    
+                    // CRITICAL: Ensure window becomes key and can accept input
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        // Force window focus and activation
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        
+                        if let window = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first {
+                            window.makeKeyAndOrderFront(nil)
+                            window.makeFirstResponder(nil) // Clear any stuck responder
+                            print("✅ Window focus: Set key window and cleared responder")
+                        } else {
+                            print("⚠️ Window focus: No window found to focus")
+                        }
+                        
+                        // Post notification to focus message input
+                        NotificationCenter.default.post(name: .focusMessageInput, object: nil)
+                        print("✅ Window focus: Posted focus notification")
+                    }
+                }
+        }
+        .windowStyle(.titleBar)
+        .windowResizability(.contentSize)
+        
+        Settings {
+            SettingsView()
+                .environmentObject(configManager)
+        }
+    }
+}
