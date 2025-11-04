@@ -1,0 +1,17 @@
+{
+  "terminal": {
+    "trusted": [
+      "xcodebuild -version",
+      "mkdir -p SerenaNet.xcodeproj",
+      "cd SerenaMaster && xcodebuild -version",
+      "cd SerenaMaster && mkdir -p SerenaNet.xcodeproj",
+      "cd *", 
+      "mkdir *", 
+      "rm *",
+      "ls", 
+      "pwd"
+    ]
+  }
+}
+
+
