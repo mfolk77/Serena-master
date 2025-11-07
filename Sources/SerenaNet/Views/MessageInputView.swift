@@ -17,37 +17,34 @@ struct MessageInputView: View {
     
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
-            // Text input area - FIXED VERSION
-            TextField("Message SerenaNet...", text: $messageText, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .font(.body)
-                .focused($isInputFocused)
-                .disabled(isProcessing)
-                .lineLimit(1...6)
-                .onSubmit {
+            // Text input area with dictation support
+            DictationTextField(
+                text: $messageText,
+                placeholder: "Message SerenaNet... (⌃⌘Space or fn fn for dictation)",
+                isEnabled: !isProcessing,
+                onSubmit: {
                     if !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         onSend()
                     }
-                }
-                .onChange(of: messageText) { newValue in
-                    updateComposingState()
-                }
-                .onAppear {
-                    // Enhanced focus handling
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        // Ensure window is active first
-                        NSApp.activate(ignoringOtherApps: true)
-                        
-                        // Force focus on the text field
-                        isInputFocused = true
-                        
-                        print("🎯 MessageInputView: Forced focus on text input")
-                    }
-                }
-                .onTapGesture {
-                    // Ensure focus when user taps the field
+                },
+                isFocused: $isInputFocused
+            )
+            .frame(minHeight: minHeight, maxHeight: maxHeight)
+            .onChange(of: messageText) { newValue in
+                updateComposingState()
+            }
+            .onAppear {
+                // Enhanced focus handling
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    // Ensure window is active first
+                    NSApp.activate(ignoringOtherApps: true)
+
+                    // Force focus on the text field
                     isInputFocused = true
+
+                    print("🎯 MessageInputView: Forced focus on text input with dictation enabled")
                 }
+            }
             
             // Voice input button (if available)
             if let onVoiceInput = onVoiceInput, isVoiceAvailable {
