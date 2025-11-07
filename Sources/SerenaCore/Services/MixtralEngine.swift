@@ -37,9 +37,8 @@ final class MixtralEngine: AIEngine {
     private var configuration: AIEngineConfiguration = .default
     
     // MARK: - Private Properties
-    private var model: MLModel? // Actual Mixtral MLModel
+    private var llamaEngine: LlamaCppEngine? // Real AI engine using llama.cpp
     private var modelConfig: MixtralModelConfig?
-    private var tokenizer: MixtralTokenizer?
     private var isInitializing: Bool = false
     private let logger = Logger(subsystem: "com.serenanet.ai", category: "MixtralEngine")
     private var memoryMonitorTimer: Timer?
@@ -232,55 +231,55 @@ final class MixtralEngine: AIEngine {
     }
     
     private func generateStreamingInference(prompt: String, context: [Message], continuation: AsyncStream<String>.Continuation) async throws {
+        guard let llamaEngine = llamaEngine, llamaEngine.isReady else {
+            logger.error("Cannot stream: LlamaCppEngine not ready")
+            continuation.finish()
+            return
+        }
+
         // Prepare context for inference
         let contextMessages = prepareContext(context)
-        let fullPrompt = buildPrompt(userMessage: prompt, context: contextMessages)
-        
-        // Tokenize the input
-        let tokens = tokenizer?.encode(fullPrompt) ?? []
-        logger.debug("Streaming inference with \(tokens.count) tokens")
-        
-        // Generate response in chunks to simulate real streaming
-        let response = try await generateMixtralResponse(for: prompt, context: contextMessages, tokens: tokens)
-        
-        // Stream the response word by word for better UX
-        let words = response.components(separatedBy: .whitespacesAndNewlines)
-        var currentChunk = ""
-        
-        for (index, word) in words.enumerated() {
-            currentChunk += (currentChunk.isEmpty ? "" : " ") + word
-            
-            // Send chunks of 2-4 words for natural streaming
-            if currentChunk.components(separatedBy: .whitespaces).count >= Int.random(in: 2...4) || index == words.count - 1 {
-                continuation.yield(currentChunk + " ")
-                currentChunk = ""
-                
-                // Simulate typing delay - faster for shorter words, slower for longer ones
-                let delay = min(max(Double(word.count) * 20_000_000, 30_000_000), 100_000_000) // 30-100ms
-                try await Task.sleep(nanoseconds: UInt64(delay))
+
+        logger.debug("Streaming real AI inference with context length: \(contextMessages.count)")
+
+        do {
+            // Use LlamaCppEngine's streaming capability
+            let stream = try await llamaEngine.generateStreamingResponse(for: prompt, context: contextMessages)
+
+            for await chunk in stream {
+                continuation.yield(chunk)
             }
+
+            continuation.finish()
+
+        } catch {
+            logger.error("Streaming inference failed: \(error.localizedDescription)")
+            continuation.finish()
         }
-        
-        continuation.finish()
     }
     
     func cleanup() async {
         logger.info("Cleaning up MixtralEngine")
-        
+
         // Log final performance metrics
         if performanceMetrics.totalInferences > 0 {
             logger.info("Final performance metrics - Total inferences: \(self.performanceMetrics.totalInferences), Average time: \(String(format: "%.2f", self.performanceMetrics.averageInferenceTime))s, Cache hit rate: \(String(format: "%.1f", self.performanceMetrics.cacheHitRate * 100))%, Memory pressure events: \(self.performanceMetrics.memoryPressureEvents)")
         }
-        
+
+        // Clean up LlamaCppEngine
+        if let llamaEngine = llamaEngine {
+            await llamaEngine.cleanup()
+        }
+
         memoryMonitorTimer?.invalidate()
         responseCache.removeAll()
         cacheAccessOrder.removeAll()
         performanceMetrics = PerformanceMetrics()
-        model = nil
+        llamaEngine = nil
         isReady = false
         loadingProgress = 0.0
         memoryUsage = 0
-        
+
         logger.info("MixtralEngine cleanup completed")
     }
     
@@ -351,29 +350,6 @@ final class MixtralEngine: AIEngine {
     
     // MARK: - Helper Methods
     
-    private func buildContextString(from messages: [Message]) -> String {
-        let contextMessages = Array(messages.suffix(configuration.contextWindow * 2))
-        return contextMessages.map { message in
-            let role = message.role == .user ? "User" : "Assistant"
-            return "\(role): \(message.content)"
-        }.joined(separator: "\n")
-    }
-    
-    private func simulateAIResponse(for prompt: String) async -> String {
-        // Simulate processing time
-        try? await Task.sleep(nanoseconds: UInt64.random(in: 500_000_000...2_000_000_000)) // 0.5-2 seconds
-        
-        // Generate a mock response based on the prompt
-        let responses = [
-            "I understand your request. Let me help you with that.",
-            "That's an interesting question. Here's what I think:",
-            "Based on the context you've provided, I can suggest:",
-            "I'd be happy to assist you with this task.",
-            "Let me break this down for you:"
-        ]
-        
-        return responses.randomElement() ?? "I'm here to help you with your request."
-    }
     
     private func updateMemoryStats() async {
         // Update memory usage first
@@ -522,42 +498,14 @@ final class MixtralEngine: AIEngine {
     // MARK: - Private Implementation
     
     private func loadModelFiles() async throws {
-        logger.info("Loading Mixtral model files")
-        print("🔍 DEBUG: loadModelFiles() called")
-        
-        // Try to locate model files
-        print("🔍 DEBUG: About to call locateModelFiles()")
-        let modelPath = try await locateModelFiles()
-        print("🔍 DEBUG: locateModelFiles() returned: \(modelPath.path)")
-        
-        // Create model configuration
-        modelConfig = MixtralModelConfig.create(for: preferredModelType, modelPath: modelPath)
-        
-        // Initialize tokenizer
-        tokenizer = MixtralTokenizer()
-        
-        logger.info("Model files located and configuration created")
+        logger.info("Initializing LlamaCpp engine for real AI inference")
+        print("🔍 DEBUG: loadModelFiles() called - creating LlamaCppEngine")
+
+        // Create LlamaCppEngine instance for real AI
+        llamaEngine = LlamaCppEngine(configuration: configuration)
+
+        logger.info("LlamaCppEngine created successfully")
         updateMemoryUsage()
-    }
-    
-    private func locateModelFiles() async throws -> URL {
-        // MVP APPROACH: Always succeed with mock path to make app functional
-        print("✅ MVP: Bypassing model detection - using mock model")
-        logger.info("MVP: Using mock model for testing (no actual model loading)")
-        
-        // Create mock path that always "exists" for MVP
-        let mockPath = URL(fileURLWithPath: "/tmp/serena_mock_model.bin")
-        
-        // Ensure no "file not found" errors by creating a placeholder
-        do {
-            let mockData = Data("MOCK_MIXTRAL_MODEL".utf8)
-            try mockData.write(to: mockPath)
-            print("✅ MVP: Created mock model file at \(mockPath.path)")
-        } catch {
-            print("⚠️ MVP: Could not create mock file, but continuing anyway")
-        }
-        
-        return mockPath
     }
     
     private func isRunningInTestEnvironment() -> Bool {
@@ -566,355 +514,80 @@ final class MixtralEngine: AIEngine {
     }
     
     private func initializeModel() async throws {
-        logger.info("MVP: Initializing Mixtral model simulator")
-        
-        guard let modelConfig = modelConfig else {
-            throw SerenaError.aiModelInitializationFailed("Model configuration not available")
+        logger.info("Initializing real AI model via LlamaCppEngine")
+
+        guard let llamaEngine = llamaEngine else {
+            throw SerenaError.aiModelInitializationFailed("LlamaCppEngine not available")
         }
-        
+
         do {
-            // MVP: Fast initialization with mock model
-            logger.info("MVP: Loading mock model from: \(modelConfig.modelPath.path)")
-            
-            // Skip file verification for MVP - we know it's a mock
-            print("✅ MVP: Skipping file verification for mock model")
-            
-            // Fast initialization for MVP (100ms instead of seconds)
-            let loadingTime: UInt64 = 100_000_000 // 0.1 seconds
-            try await Task.sleep(nanoseconds: loadingTime)
-            
-            // MVP: Create sophisticated mock that simulates Mixtral behavior
-            model = try await createMixtralSimulator()
-            
-            logger.info("MVP: Mock Mixtral model initialized successfully with \(modelConfig.precision.description) precision")
-            print("✅ MVP: Model initialization completed - ready for conversations")
-            
+            // Initialize the real llama.cpp engine with Mistral model
+            logger.info("Calling LlamaCppEngine.initialize() for Mistral-7B")
+            try await llamaEngine.initialize()
+
+            logger.info("✅ Real AI model initialized successfully via LlamaCppEngine")
+            print("✅ Real Mistral-7B model ready for conversations")
+
         } catch {
-            logger.error("MVP: Failed to initialize mock Mixtral model: \(error.localizedDescription)")
-            throw SerenaError.aiModelInitializationFailed("Could not load mock model: \(error.localizedDescription)")
+            logger.error("Failed to initialize LlamaCppEngine: \(error.localizedDescription)")
+            throw SerenaError.aiModelInitializationFailed("Could not load Mistral model: \(error.localizedDescription)")
         }
-        
+
         updateMemoryUsage()
     }
     
-    private func createMixtralSimulator() async throws -> MLModel? {
-        // MVP: Create a sophisticated simulator that behaves like Mixtral
-        // This allows us to test the full pipeline without requiring actual CoreML models
-        
-        logger.info("MVP: Creating Mixtral simulator")
-        print("✅ MVP: Initializing intelligent response simulator")
-        
-        // In production, this would be replaced with:
-        // return try MLModel(contentsOf: modelConfig!.modelPath)
-        
-        // MVP: Return nil but mark as ready - inference handled by simulator
-        print("✅ MVP: Mixtral simulator ready - can generate intelligent responses")
-        return nil
-    }
-    
     private func validateModel() async throws {
-        logger.info("Validating Mixtral model")
-        
-        // In test environment or MVP, we don't need actual model validation
-        if isRunningInTestEnvironment() || model == nil {
-            logger.info("Skipping model validation in test/MVP environment")
-            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-            return
+        logger.info("Validating AI model via LlamaCppEngine")
+
+        guard let llamaEngine = llamaEngine, llamaEngine.isReady else {
+            throw SerenaError.aiModelInitializationFailed("LlamaCppEngine not ready")
         }
-        
-        guard model != nil else {
-            throw SerenaError.aiModelInitializationFailed("Model not loaded")
-        }
-        
-        // Simulate model validation
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        // TODO: Implement actual model validation
-        // This would involve:
-        // 1. Running test inference
-        // 2. Validating output format
-        // 3. Checking model capabilities
+
+        logger.info("✅ Model validation successful - LlamaCppEngine ready")
     }
-    
+
     private func warmupModel() async throws {
-        logger.info("Warming up Mixtral model")
-        
-        // Simulate model warmup with a test inference
-        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-        
-        // TODO: Implement actual model warmup
-        // This would involve:
-        // 1. Running several test inferences
-        // 2. Optimizing memory layout
-        // 3. Preparing inference caches
-        
+        logger.info("Warming up AI model")
+
+        // LlamaCppEngine handles its own warmup during initialization
+        // No additional warmup needed
+
         updateMemoryUsage()
     }
     
     private func performInference(prompt: String, context: [Message]) async throws -> String {
-        guard modelConfig != nil else {
+        guard let llamaEngine = llamaEngine, llamaEngine.isReady else {
             throw SerenaError.aiModelNotLoaded
         }
-        
-        // Prepare context for inference
+
+        // Prepare context for inference (limit to our maxContextLength)
         let contextMessages = prepareContext(context)
-        let fullPrompt = buildPrompt(userMessage: prompt, context: contextMessages)
-        
-        logger.debug("Performing inference with context length: \(contextMessages.count)")
-        
+
+        logger.debug("Performing REAL AI inference with context length: \(contextMessages.count)")
+
         do {
-            // Tokenize the input
-            let tokens = tokenizer?.encode(fullPrompt) ?? []
-            logger.debug("Tokenized input to \(tokens.count) tokens")
-            
-            // Simulate inference time based on token count and model precision
-            let baseInferenceTime = Double(tokens.count) / 100.0 // ~100 tokens per second
-            let precisionMultiplier = modelConfig?.precision == .quantized ? 1.0 : 1.5
-            let inferenceTime = min(max(baseInferenceTime * precisionMultiplier, 0.5), 5.0)
-            
-            try await Task.sleep(nanoseconds: UInt64(inferenceTime * 1_000_000_000))
-            
-            // For MVP, use sophisticated response generation
-            // In production, this would be actual model inference
-            let response = try await generateMixtralResponse(for: prompt, context: contextMessages, tokens: tokens)
-            
-            logger.debug("Generated response of length: \(response.count)")
+            // Delegate to LlamaCppEngine for real AI inference
+            let response = try await llamaEngine.generateResponse(for: prompt, context: contextMessages)
+
+            logger.debug("✅ Real AI response generated (length: \(response.count))")
             updateMemoryUsage()
             return response
-            
+
         } catch {
-            logger.error("Inference failed: \(error.localizedDescription)")
+            logger.error("Real AI inference failed: \(error.localizedDescription)")
             throw SerenaError.aiResponseGenerationFailed("Inference error: \(error.localizedDescription)")
         }
     }
     
-    private func generateMixtralResponse(for prompt: String, context: [Message], tokens: [Int]) async throws -> String {
-        // Enhanced response generation that simulates Mixtral's behavior
-        // This provides more realistic responses for MVP testing
-        
-        let promptLower = prompt.lowercased()
-        
-        // Analyze the prompt to determine response type
-        if promptLower.contains("hello") || promptLower.contains("hi") || promptLower.contains("hey") {
-            return generateGreetingResponse(context: context)
-        } else if promptLower.contains("what") || promptLower.contains("how") || promptLower.contains("why") {
-            return generateQuestionResponse(for: prompt, context: context)
-        } else if promptLower.contains("help") || promptLower.contains("assist") {
-            return generateHelpResponse(for: prompt, context: context)
-        } else if promptLower.contains("code") || promptLower.contains("program") || promptLower.contains("function") {
-            return generateCodeResponse(for: prompt, context: context)
-        } else if promptLower.contains("explain") || promptLower.contains("tell me about") {
-            return generateExplanationResponse(for: prompt, context: context)
-        } else {
-            return generateGeneralResponse(for: prompt, context: context)
-        }
-    }
-    
-    private func generateGreetingResponse(context: [Message]) -> String {
-        let greetings = [
-            "Hello! I'm SerenaNet, your local AI assistant. How can I help you today?",
-            "Hi there! I'm ready to assist you with any questions or tasks you have.",
-            "Hey! Great to see you. What would you like to work on together?",
-            "Hello! I'm here and ready to help. What's on your mind?",
-            "Hi! I'm SerenaNet, running locally on your device. How can I assist you?"
-        ]
-        
-        // Consider conversation history for more natural responses
-        if context.isEmpty {
-            return greetings.randomElement() ?? greetings[0]
-        } else {
-            return "Hello again! How can I continue helping you?"
-        }
-    }
-    
-    private func generateQuestionResponse(for prompt: String, context: [Message]) -> String {
-        // Check if we've discussed this topic before
-        let previousTopics = extractTopicsFromContext(context)
-        let currentTopic = extractMainTopic(from: prompt)
-
-        var questionStarters = [
-            "That's a great question.",
-            "Interesting question! Here's what I can tell you:",
-            "I'd be happy to help explain that.",
-            "That's something I can definitely help with.",
-            "Good question! Let me break this down for you:"
-        ]
-
-        // Add context-aware starters if we have conversation history
-        if !context.isEmpty {
-            if previousTopics.contains(where: { currentTopic.lowercased().contains($0.lowercased()) }) {
-                questionStarters.insert("Building on what we discussed earlier,", at: 0)
-                questionStarters.insert("That relates to what you asked before.", at: 0)
-            }
-        }
-
-        let starter = questionStarters.randomElement() ?? questionStarters[0]
-
-        // Reference previous messages if relevant
-        var response = starter
-
-        // Add conversation awareness
-        if context.count > 3 {
-            response += " I'm keeping track of our conversation to give you better answers."
-        }
-
-        // Generate contextual content based on the question
-        if prompt.lowercased().contains("weather") {
-            response += " I don't have access to current weather data, but I can help you think about weather-related topics or suggest ways to check the weather."
-        } else if prompt.lowercased().contains("time") {
-            response += " I can see it's currently \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)). Is there something specific about time management or scheduling I can help with?"
-        } else if prompt.lowercased().contains("name") || prompt.lowercased().contains("my name") {
-            // Check if user mentioned their name earlier in the conversation
-            if let nameMessage = findNameInContext(context) {
-                response += " Yes, you mentioned your name earlier in our conversation: \(nameMessage). I remember what you've told me!"
-            } else {
-                response += " I don't see where you've mentioned your name in our conversation yet. Feel free to tell me!"
-            }
-        } else {
-            response += " Based on your question about '\(prompt.prefix(50))', I can provide some insights and help you explore this topic further."
-        }
-
-        return response
-    }
-
-    // Helper to find if user mentioned their name in context
-    private func findNameInContext(_ context: [Message]) -> String? {
-        for message in context where message.role == .user {
-            let content = message.content.lowercased()
-            if content.contains("my name is") || content.contains("i'm") || content.contains("i am") || content.contains("call me") {
-                // Extract potential name from patterns like "my name is X" or "I'm X"
-                let patterns = [
-                    "my name is ([a-z]+)",
-                    "i'?m ([a-z]+)",
-                    "i am ([a-z]+)",
-                    "call me ([a-z]+)"
-                ]
-
-                for pattern in patterns {
-                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                        if let match = regex.firstMatch(in: message.content, range: NSRange(message.content.startIndex..., in: message.content)) {
-                            if let nameRange = Range(match.range(at: 1), in: message.content) {
-                                return String(message.content[nameRange])
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return nil
-    }
-
-    // Helper to extract topics from context
-    private func extractTopicsFromContext(_ context: [Message]) -> [String] {
-        var topics: [String] = []
-        for message in context.suffix(5) {
-            let words = message.content.components(separatedBy: .whitespacesAndNewlines)
-                .filter { $0.count > 4 }
-            topics.append(contentsOf: words)
-        }
-        return topics
-    }
-    
-    private func generateHelpResponse(for prompt: String, context: [Message]) -> String {
-        return "I'm here to help! I can assist you with a wide variety of tasks including answering questions, explaining concepts, helping with problem-solving, and having conversations. I run locally on your device, so your privacy is protected. What specific area would you like help with?"
-    }
-    
-    private func generateCodeResponse(for prompt: String, context: [Message]) -> String {
-        return "I'd be happy to help with coding! I can assist with programming concepts, code review, debugging, explaining algorithms, and more. Could you share more details about what you're working on or what specific coding help you need?"
-    }
-    
-    private func generateExplanationResponse(for prompt: String, context: [Message]) -> String {
-        let topic = extractMainTopic(from: prompt)
-        return "I'd be glad to explain \(topic) for you. This is a topic that can be approached from several angles. Let me provide you with a comprehensive overview and feel free to ask follow-up questions about any specific aspects you'd like to explore further."
-    }
-    
-    private func generateGeneralResponse(for prompt: String, context: [Message]) -> String {
-        var responses = [
-            "I understand what you're asking about. Let me provide you with a thoughtful response.",
-            "That's an interesting point you've raised. Here's how I would approach this.",
-            "I can help you with that. Based on what you've shared, here are some thoughts.",
-            "Thank you for sharing that with me. Let me give you a comprehensive response.",
-            "I see what you're getting at. This is something we can work through together.",
-            "Good point! Let me think about this and give you a helpful answer.",
-            "That's worth exploring. Let me share my thoughts on this.",
-            "I appreciate you bringing this up. Here's what I think about it."
-        ]
-
-        // Add variety based on conversation length
-        if context.count > 5 {
-            responses.append("We've been having a great conversation! Regarding your latest question, here's my take.")
-            responses.append("Building on our discussion so far, I think I can help with this.")
-        }
-
-        // Check if this is a follow-up question
-        if !context.isEmpty {
-            let lastUserMessages = context.filter { $0.role == .user }.suffix(2)
-            if lastUserMessages.count > 1 {
-                let lastPrompt = lastUserMessages.first?.content ?? ""
-                if areSimilarTopics(prompt, lastPrompt) {
-                    responses.insert("That's a good follow-up question.", at: 0)
-                    responses.insert("Expanding on what we just discussed,", at: 0)
-                }
-            }
-        }
-
-        var baseResponse = responses.randomElement() ?? responses[0]
-
-        // Add context awareness details
-        if context.count > 3 {
-            let messageCount = context.count
-            baseResponse += " I'm tracking our conversation (\(messageCount) messages so far) to give you better, more relevant answers."
-        }
-
-        // Reference conversation memory
-        if context.count > 10 {
-            baseResponse += " I remember everything we've discussed, so feel free to refer back to earlier topics!"
-        }
-
-        return baseResponse
-    }
-
-    // Helper to determine if two prompts are about similar topics
-    private func areSimilarTopics(_ prompt1: String, _ prompt2: String) -> Bool {
-        let words1 = Set(prompt1.lowercased().components(separatedBy: .whitespacesAndNewlines).filter { $0.count > 4 })
-        let words2 = Set(prompt2.lowercased().components(separatedBy: .whitespacesAndNewlines).filter { $0.count > 4 })
-        let commonWords = words1.intersection(words2)
-        return commonWords.count >= 2  // At least 2 significant words in common
-    }
-    
-    private func extractMainTopic(from prompt: String) -> String {
-        // Simple topic extraction for more natural responses
-        let words = prompt.components(separatedBy: .whitespacesAndNewlines)
-            .filter { $0.count > 3 && !["what", "how", "why", "when", "where", "tell", "about", "explain"].contains($0.lowercased()) }
-        
-        return words.first ?? "that topic"
-    }
     
     private func prepareContext(_ messages: [Message]) -> [Message] {
         // Limit context to maxContextLength messages, keeping the most recent
         let recentMessages = Array(messages.suffix(maxContextLength))
-        
+
         logger.debug("Prepared context with \(recentMessages.count) messages")
         return recentMessages
     }
-    
-    private func buildPrompt(userMessage: String, context: [Message]) -> String {
-        var prompt = ""
-        
-        // Add context messages
-        for message in context {
-            let role = message.role == .user ? "User" : "Assistant"
-            prompt += "\(role): \(message.content)\n"
-        }
-        
-        // Add current user message
-        prompt += "User: \(userMessage)\nAssistant:"
-        
-        return prompt
-    }
-    
 
-    
     private func createCacheKey(prompt: String, context: [Message]) -> String {
         // Create a more sophisticated cache key that considers context relevance
         let contextHash = context.suffix(5).map { "\($0.role.rawValue):\($0.content.prefix(100))" }.joined(separator: "|")
@@ -1015,14 +688,11 @@ final class MixtralEngine: AIEngine {
         
         // Calculate actual cache memory usage
         let actualCacheMemoryUsage: Int64 = Int64(getCacheMemoryUsage())
-        
-        // Add tokenizer memory usage
-        let tokenizerMemoryUsage: Int64 = tokenizer != nil ? 50_000_000 : 0 // ~50MB for tokenizer
-        
+
         // Add performance metrics memory usage
         let metricsMemoryUsage: Int64 = 1_000_000 // ~1MB for metrics
-        
-        let totalUsage = baseMemoryUsage + actualCacheMemoryUsage + tokenizerMemoryUsage + metricsMemoryUsage
+
+        let totalUsage = baseMemoryUsage + actualCacheMemoryUsage + metricsMemoryUsage
         memoryUsage = totalUsage
         
         // Get system memory info with better accuracy
@@ -1056,7 +726,7 @@ final class MixtralEngine: AIEngine {
         currentMemoryStats = AIEngineMemoryStats(
             totalMemoryUsage: totalUsage,
             modelMemoryUsage: baseMemoryUsage,
-            cacheMemoryUsage: actualCacheMemoryUsage + tokenizerMemoryUsage + metricsMemoryUsage,
+            cacheMemoryUsage: actualCacheMemoryUsage + metricsMemoryUsage,
             availableMemory: availableMemory,
             memoryPressureLevel: pressureLevel
         )
@@ -1199,26 +869,3 @@ struct MixtralModelConfig {
     }
 }
 
-/// Simple tokenizer for Mixtral model (MVP implementation)
-private class MixtralTokenizer {
-    private let vocabularySize = 32000
-    
-    func encode(_ text: String) -> [Int] {
-        // For MVP, use a simple tokenization approach
-        // In production, this would use the actual Mixtral tokenizer
-        let words = text.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-        
-        // Simulate tokenization by converting words to token IDs
-        return words.map { word in
-            // Simple hash-based token ID generation for MVP
-            abs(word.hashValue) % vocabularySize
-        }
-    }
-    
-    func decode(_ tokens: [Int]) -> String {
-        // For MVP, return a placeholder
-        // In production, this would decode actual tokens
-        return "Decoded text from \(tokens.count) tokens"
-    }
-}
