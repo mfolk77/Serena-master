@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "SerenaNet",
+    "bundle_id": "com.serenatools.serenanet",
+    "version": "1.0.0",
+    "build_number": "1",
+    "category": "Productivity",
+    "minimum_os_version": "13.0",
+    "supported_architectures": ["arm64", "x86_64"]
+  },
+  "signing": {
+    "team_id": "YOUR_TEAM_ID",
+    "developer_id": "Developer ID Application: Your Name (TEAM_ID)",
+    "app_store_certificate": "Mac App Store: Your Name (TEAM_ID)",
+    "provisioning_profile": "SerenaNet App Store",
+    "entitlements": {
+      "sandbox": true,
+      "microphone": true,
+      "speech_recognition": true,
+      "file_access": "user_selected",
+      "network_client": false,
+      "network_server": false
+    }
+  },
+  "distribution": {
+    "methods": ["direct_dmg", "app_store", "testflight"],
+    "dmg": {
+      "volume_name": "SerenaNet",
+      "window_size": [600, 400],
+      "icon_size": 100,
+      "background_image": null
+    },
+    "app_store": {
+      "category": "Productivity",
+      "price_tier": "Free",
+      "availability": "worldwide",
+      "age_rating": "4+"
+    }
+  },
+  "notarization": {
+    "apple_id": "your-apple-id@example.com",
+    "team_id": "YOUR_TEAM_ID",
+    "bundle_id": "com.serenatools.serenanet",
+    "primary_bundle_id": "com.serenatools.serenanet"
+  },
+  "metadata": {
+    "short_description": "Local AI assistant for privacy",
+    "keywords": ["AI assistant", "local AI", "privacy", "offline AI", "voice input", "productivity"],
+    "support_url": "https://serenatools.com/support",
+    "privacy_policy_url": "https://serenatools.com/privacy",
+    "terms_url": "https://serenatools.com/terms"
+  },
+  "build": {
+    "configuration": "Release",
+    "optimization": "speed",
+    "strip_symbols": false,
+    "include_debug_info": true,
+    "enable_bitcode": false
+  },
+  "testing": {
+    "testflight": {
+      "internal_testers": 25,
+      "external_testers": 100,
+      "test_duration_days": 90,
+      "feedback_email": "feedback@serenatools.com"
+    },
+    "beta_features": {
+      "crash_reporting": true,
+      "analytics": false,
+      "feedback_collection": true
+    }
+  },
+  "privacy": {
+    "data_collection": "none",
+    "tracking": false,
+    "third_party_sdks": [],
+    "encryption": "local_only",
+    "data_retention": "user_controlled"
+  },
+  "requirements": {
+    "minimum_ram": "4GB",
+    "recommended_ram": "8GB",
+    "disk_space": "2GB",
+    "processor": "Apple Silicon or Intel x64",
+    "special_hardware": "microphone_optional"
+  }
+}
