@@ -563,13 +563,44 @@ class ChatManager: ObservableObject {
             print("🤖 generateAIResponse: About to generate response for: '\(lastUserMessage)'")
             
             // Generate AI response using SerenaOrchestrator with performance monitoring
-            let responseText = try await performanceMonitor.measureResponseTime {
+            var responseText = try await performanceMonitor.measureResponseTime {
                 print("🤖 generateAIResponse: Calling orchestrator.processInput with context: \(contextMessages.count) messages")
                 return try await orchestrator.processInput(lastUserMessage, context: contextMessages)
             }
-            
+
             print("🤖 generateAIResponse: Generated response: '\(responseText)'")
-            
+
+            // Parse and execute tool calls
+            let toolParser = ToolCallParser.shared
+            let toolCalls = toolParser.parseToolCalls(from: responseText)
+
+            if !toolCalls.isEmpty {
+                print("🔧 generateAIResponse: Found \(toolCalls.count) tool call(s)")
+
+                let toolExecutor = ToolExecutor.shared
+
+                for toolCall in toolCalls {
+                    print("🔧 Executing tool: \(toolCall.tool) action: \(toolCall.action ?? "none")")
+
+                    do {
+                        let toolResult = try await toolExecutor.execute(toolCall.ftaiTask)
+
+                        // Append tool result to response
+                        if !toolResult.output.isEmpty {
+                            responseText += "\n\n✅ " + toolResult.output
+                            print("✅ Tool executed successfully: \(toolResult.output.prefix(100))")
+                        }
+                    } catch {
+                        print("❌ Tool execution failed: \(error.localizedDescription)")
+                        responseText += "\n\n⚠️ Tool execution failed: \(error.localizedDescription)"
+                    }
+                }
+
+                // Remove raw tool call lines for cleaner response
+                let cleanedResponse = toolParser.removeToolCalls(from: responseText)
+                responseText = cleanedResponse
+            }
+
             let assistantMessage = Message(content: responseText, role: .assistant)
             
             conversation.addMessage(assistantMessage)
