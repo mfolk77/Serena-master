@@ -30,7 +30,11 @@
     <string>SerenaNet uses your microphone to enable voice input for hands-free interaction with your AI assistant. All voice processing happens locally on your device for privacy.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>SerenaNet uses speech recognition to convert your voice input to text for AI conversations. All speech processing is performed locally on your device.</string>
-    
+    <key>NSCalendarsUsageDescription</key>
+    <string>SerenaNet needs access to your calendar to create events, view upcoming appointments, and help you manage your schedule through AI assistance.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>SerenaNet needs access to your reminders to create and manage tasks, helping you stay organized through AI-powered assistance.</string>
+
     <!-- App Transport Security -->
     <key>NSAppTransportSecurity</key>
     <dict>

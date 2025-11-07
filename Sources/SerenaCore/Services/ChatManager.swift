@@ -577,7 +577,7 @@ class ChatManager: ObservableObject {
             if !toolCalls.isEmpty {
                 print("🔧 generateAIResponse: Found \(toolCalls.count) tool call(s)")
 
-                let toolExecutor = ToolExecutor.shared
+                let toolExecutor = RealToolExecutor.shared
 
                 for toolCall in toolCalls {
                     print("🔧 Executing tool: \(toolCall.tool) action: \(toolCall.action ?? "none")")
