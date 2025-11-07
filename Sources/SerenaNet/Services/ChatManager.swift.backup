@@ -45,7 +45,6 @@ class ChatManager: ObservableObject {
     private let orchestrator: SerenaOrchestrator
     private let performanceMonitor = PerformanceMonitor.shared
     private let accessibilityManager = AccessibilityManager.shared
-    private let embeddingService = LocalEmbeddingService.shared
     
     // SerenaTools integration (future expansion)
     private let serenaToolsBridge: SerenaToolsBridge?
@@ -78,7 +77,6 @@ class ChatManager: ObservableObject {
         // Initialize AI engine
         Task {
             await initializeAIEngine()
-            await initializeEmbeddingService()
         }
     }
     
@@ -92,15 +90,6 @@ class ChatManager: ObservableObject {
         }
     }
     
-
-    private func initializeEmbeddingService() async {
-        do {
-            try await embeddingService.initialize()
-        } catch {
-            errorManager.handle(.aiModelInitializationFailed("Embedding: \(error.localizedDescription)"), context: "Embedding init")
-        }
-    }
-
     // MARK: - Network Status
     
     /// Check if the app is currently offline
@@ -376,35 +365,6 @@ class ChatManager: ObservableObject {
         )
     }
     
-    // MARK: - Semantic Search
-
-    func findSimilarMessages(to query: String, in conversation: Conversation, limit: Int = 5, threshold: Float = 0.7) async throws -> [(message: Message, similarity: Float)] {
-        guard embeddingService.isReady else { throw SerenaError.aiModelNotLoaded }
-        let queryEmbedding = try await embeddingService.embed(text: query)
-        var similarities: [(message: Message, similarity: Float)] = []
-        for message in conversation.messages {
-            let messageEmbedding = try await embeddingService.embed(text: message.content)
-            let similarity = embeddingService.cosineSimilarity(queryEmbedding, messageEmbedding)
-            if similarity >= threshold {
-                similarities.append((message: message, similarity: similarity))
-            }
-        }
-        return similarities.sorted { $0.similarity > $1.similarity }.prefix(limit).map { $0 }
-    }
-
-    func getSemanticContext(for query: String, conversation: Conversation, limit: Int = 5) async -> [Message] {
-        do {
-            let similarMessages = try await findSimilarMessages(to: query, in: conversation, limit: limit, threshold: 0.6)
-            return similarMessages.map { $0.message }
-        } catch {
-            return Array(conversation.messages.suffix(limit))
-        }
-    }
-
-    var isEmbeddingReady: Bool {
-        return embeddingService.isReady
-    }
-
     // MARK: - Voice Input
     
     /// Access to the voice manager for UI components

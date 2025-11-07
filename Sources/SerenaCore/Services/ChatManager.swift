@@ -564,27 +564,8 @@ class ChatManager: ObservableObject {
             
             // Generate AI response using SerenaOrchestrator with performance monitoring
             let responseText = try await performanceMonitor.measureResponseTime {
-                print("🤖 generateAIResponse: Inside measureResponseTime block")
-                // Direct RTAI processing to bypass complex routing issues
-                if lastUserMessage.lowercased().contains("hello") || lastUserMessage.lowercased().contains("hi") {
-                    print("🤖 generateAIResponse: Detected greeting")
-                    return "Hello! I'm Serena, powered by FolkTech RTAI. How can I help you today?"
-                } else if lastUserMessage.lowercased().contains("what can you do") {
-                    print("🤖 generateAIResponse: Detected capability question")
-                    return "I'm your AI assistant powered by the RTAI system! I can help with questions, conversations, and various tasks. What would you like to explore?"
-                } else if lastUserMessage.lowercased().contains("how are you") {
-                    print("🤖 generateAIResponse: Detected status question")
-                    return "I'm doing great! The RTAI system is running smoothly and I'm ready to help you with anything you need."
-                } else if lastUserMessage.lowercased().contains("time") {
-                    print("🤖 generateAIResponse: Detected time question")
-                    let formatter = DateFormatter()
-                    formatter.dateStyle = .full
-                    formatter.timeStyle = .short
-                    return "The current date and time is: \(formatter.string(from: Date()))"
-                } else {
-                    print("🤖 generateAIResponse: Using default response")
-                    return "I understand you're asking: \"\(lastUserMessage)\"\n\nI'm powered by the FolkTech RTAI system and I'm working to provide you with helpful responses. What else can I help you with?"
-                }
+                print("🤖 generateAIResponse: Calling orchestrator.processInput with context: \(contextMessages.count) messages")
+                return try await orchestrator.processInput(lastUserMessage, context: contextMessages)
             }
             
             print("🤖 generateAIResponse: Generated response: '\(responseText)'")

@@ -191,9 +191,9 @@ class RTAIBridge: ObservableObject {
     }
     
     // MARK: - Processing (Simplified for MVP)
-    
+
     /// Process text input through RTAI system with intelligent responses
-    func processText(_ input: String) async -> RTAIProcessingResult {
+    func processText(_ input: String, context: [Message] = []) async -> RTAIProcessingResult {
         guard isSystemReady else {
             return RTAIProcessingResult(
                 success: false,
@@ -203,23 +203,23 @@ class RTAIBridge: ObservableObject {
                 errorMessage: "RTAI system not ready"
             )
         }
-        
+
         let startTime = CFAbsoluteTimeGetCurrent()
-        
-        logger.info("🦀 Processing text input through RTAI system (\(input.count) chars)")
-        
+
+        logger.info("🦀 Processing text input through RTAI system (\(input.count) chars, context: \(context.count) messages)")
+
         // Generate intelligent response (RTAI is initialized and managing the system)
-        let response = generateIntelligentResponse(for: input)
-        
+        let response = generateIntelligentResponse(for: input, context: context)
+
         let processingTime = UInt64((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
-        
+
         logger.info("✅ RTAI processing completed in \(processingTime)ms")
-        
+
         return RTAIProcessingResult(
             success: true,
             response: response,
             processingTimeMs: processingTime,
-            confidence: determineConfidence(for: input),
+            confidence: determineConfidence(for: input, context: context),
             errorMessage: nil
         )
     }
@@ -230,113 +230,73 @@ class RTAIBridge: ObservableObject {
         return isInitialized && isStarted && (libraryHandle != nil)
     }
     
-    private func generateIntelligentResponse(for input: String) -> String {
+    private func generateIntelligentResponse(for input: String, context: [Message]) -> String {
         let lowercased = input.lowercased()
-        
+
+        // Check conversation history for context-aware responses
+        let hasConversationHistory = !context.isEmpty
+        let previousMessages = context.suffix(3)  // Last 3 messages for context
+
         // Simple pattern matching that mimics RTAI reflex behavior
         if lowercased.contains("hello") || lowercased.contains("hi ") || lowercased.hasPrefix("hi") {
-            return "Hello! How can I help you today? I'm powered by the FolkTech RTAI system."
+            if hasConversationHistory {
+                return "Hello again! How can I continue helping you?"
+            }
+            return "Hello! How can I help you today?"
         }
-        
+
         if lowercased.contains("how are you") {
             return "I'm doing great! The RTAI system is running smoothly and I'm ready to assist you."
         }
-        
+
         if lowercased.contains("what can you do") || lowercased.contains("help") {
             return """
-            I'm Serena, powered by the FolkTech Mitosis + RTAI architecture! I can:
-            
+            I'm Serena! I can:
+
             • Answer questions and have conversations
-            • Process complex requests with intelligent routing
-            • Learn from our interactions
+            • Remember our conversation history
+            • Process requests with intelligent routing
             • Operate locally-first for your privacy
-            • Scale automatically based on workload
-            
+
             What would you like to explore?
             """
         }
-        
-        if lowercased.contains("rtai") || lowercased.contains("mitosis") || lowercased.contains("folktech") {
-            return """
-            You're asking about the RTAI system! The FolkTech RTAI (Reactive Task AI) uses a Mitosis architecture:
-            
-            • MitosisCell: Lightweight processing units with local memory
-            • Zero-Infinity Governor: Adaptive scaling from minimal to elastic
-            • Reflex Engine: Sub-50ms responses for common patterns
-            • Local-First: Privacy-focused processing
-            • FTAI Integration: Direct bytecode execution
-            
-            It's designed to be your intelligent, scalable, and private AI assistant.
-            """
-        }
-        
-        if lowercased.contains("weather") {
-            return "I'd be happy to help with weather information! In a full implementation, I would connect to weather services. For now, I recommend checking your local weather app or asking me about other topics I can help with."
-        }
-        
+
         if lowercased.contains("time") || lowercased.contains("date") {
             let formatter = DateFormatter()
             formatter.dateStyle = .full
             formatter.timeStyle = .short
             return "The current date and time is: \(formatter.string(from: Date()))"
         }
-        
-        // For complex queries, simulate LLM escalation
-        if input.count > 50 || lowercased.contains("explain") || lowercased.contains("analyze") {
-            return """
-            That's an interesting and complex question! I'm processing this through my LLM escalation system.
-            
-            Based on your query: "\(input.prefix(100))..."
-            
-            In a full implementation, this would be routed through the RTAI orchestrator to the appropriate specialized cell for deep analysis. The system would:
-            
-            1. Route through the Thalamus for optimal cell selection
-            2. Process with local AI models when possible
-            3. Escalate to cloud LLMs only when necessary
-            4. Learn from the interaction for future similar queries
-            
-            This demonstrates the intelligent routing and processing capabilities of the Mitosis + RTAI architecture!
-            """
-        }
-        
-        // Default response
-        return """
-        I understand you're asking about: "\(input.prefix(50))..."
-        
-        I'm currently running on the FolkTech RTAI system. The RTAI backend is initialized and managing the system architecture.
-        
-        The RTAI system successfully:
-        • Initialized and started ✅
-        • Routed your input through the orchestrator ✅
-        • Processed with the appropriate confidence level ✅
-        
-        What else would you like to know or explore?
-        """
+
+        // Default: Let AI engine handle for better context awareness
+        // Return nil confidence to force escalation to AI engine
+        return ""
     }
     
-    private func determineConfidence(for input: String) -> Double {
+    private func determineConfidence(for input: String, context: [Message]) -> Double {
         let lowercased = input.lowercased()
-        
-        // High confidence for simple greetings and known patterns
-        if lowercased.contains("hello") || lowercased.contains("hi ") || lowercased.hasPrefix("hi") {
-            return 0.95
-        }
-        
-        if lowercased.contains("how are you") || lowercased.contains("what can you do") {
+
+        // ONLY handle very simple reflexive queries with high confidence
+        // Let AI engine handle everything else for better context awareness
+
+        // High confidence ONLY for first-time simple greetings
+        if context.isEmpty && (lowercased.contains("hello") || lowercased.contains("hi ") || lowercased.hasPrefix("hi")) {
             return 0.90
         }
-        
-        if lowercased.contains("rtai") || lowercased.contains("mitosis") || lowercased.contains("time") {
+
+        // Medium confidence for time/date queries (factual, no context needed)
+        if lowercased.contains("time") || lowercased.contains("date") {
             return 0.85
         }
-        
-        // Medium confidence for moderate complexity
-        if input.count > 50 || lowercased.contains("explain") {
-            return 0.70
+
+        // Medium confidence for "how are you" (simple reflex)
+        if lowercased.contains("how are you") {
+            return 0.80
         }
-        
-        // Default confidence
-        return 0.75
+
+        // Low confidence for everything else - let AI engine handle with context
+        return 0.40
     }
     
 }

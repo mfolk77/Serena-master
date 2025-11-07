@@ -20,6 +20,9 @@ final class MixtralEngine: AIEngine {
     private var tokenizer: MixtralTokenizer?
     private var isInitializing: Bool = false
     private let logger = Logger(subsystem: "com.serenanet.ai", category: "MixtralEngine")
+
+    private var llamaCppEngine: LlamaCppEngine?
+    private var useLlamaCpp: Bool = true
     private var memoryMonitorTimer: Timer?
     
     // Enhanced caching system
@@ -53,6 +56,11 @@ final class MixtralEngine: AIEngine {
     init(configuration: AIEngineConfiguration = .default) {
         self.configuration = configuration
         startMemoryMonitoring()
+    
+
+        if useLlamaCpp {
+            llamaCppEngine = LlamaCppEngine(configuration: configuration)
+        }
     }
     
     deinit {
@@ -72,6 +80,23 @@ final class MixtralEngine: AIEngine {
         
         logger.info("Starting MixtralEngine initialization")
         
+        
+        if let llamaEngine = llamaCppEngine {
+            do {
+                logger.info("🦙 Trying LlamaCpp...")
+                try await llamaEngine.initialize()
+                if llamaEngine.isReady {
+                    logger.info("✅ LlamaCpp ready - using real LLM")
+                    isReady = true
+                    isInitializing = false
+                    loadingProgress = 1.0
+                    return
+                }
+            } catch {
+                logger.warning("⚠️ LlamaCpp failed: \(error.localizedDescription)")
+            }
+        }
+
         do {
             // Simulate model loading phases
             try await loadModelFiles()
@@ -108,6 +133,12 @@ final class MixtralEngine: AIEngine {
             throw SerenaError.emptyMessage
         }
         
+        
+        if let llamaEngine = llamaCppEngine, llamaEngine.isReady {
+            logger.info("🦙 Using LlamaCpp for real LLM")
+            return try await llamaEngine.generateResponse(for: prompt, context: context)
+        }
+
         logger.info("Generating response for prompt (length: \(prompt.count))")
         
         let startTime = Date()

@@ -64,39 +64,41 @@ class SerenaOrchestrator: ObservableObject {
     private func handleStandardLLMQuery(_ input: String, context: [Message]) async throws -> String {
         lastProcessingType = .standardLLM
         logger.info("Routing to standard LLM system")
-        
+
         // First try the RTAI bridge for intelligent processing
         let rtaiBridge = RTAIBridge.shared
-        let rtaiResult = await rtaiBridge.processText(input)
-        
-        if rtaiResult.success && rtaiResult.confidence > 0.6 {
-            logger.info("RTAI bridge provided high-confidence response")
+        let rtaiResult = await rtaiBridge.processText(input, context: context)
+
+        // Only use RTAI for very high confidence reflexive responses (0.85+)
+        // This allows the AI engine to handle most queries with conversation context
+        if rtaiResult.success && rtaiResult.confidence > 0.85 {
+            logger.info("RTAI bridge provided high-confidence reflexive response (\(String(format: "%.2f", rtaiResult.confidence)))")
             return rtaiResult.response
         }
-        
-        // Fallback to AI engine if available
+
+        // Prefer AI engine for context-aware responses
         guard aiEngine.isReady else {
             // If AI engine not ready but RTAI gave us something, use it
-            if rtaiResult.success {
-                logger.info("Using RTAI response as fallback")
+            if rtaiResult.success && !rtaiResult.response.isEmpty {
+                logger.info("Using RTAI response as fallback (AI engine not ready)")
                 return rtaiResult.response
             }
             throw SerenaError.aiModelNotLoaded
         }
-        
+
         do {
             let result = try await aiEngine.generateResponse(for: input, context: context)
-            logger.info("Standard LLM query completed successfully")
+            logger.info("Standard LLM query completed successfully with context (\(context.count) messages)")
             return result
         } catch {
             logger.error("Standard LLM query failed: \(error.localizedDescription)")
-            
+
             // Final fallback to RTAI if available
-            if rtaiResult.success {
+            if rtaiResult.success && !rtaiResult.response.isEmpty {
                 logger.info("Using RTAI as final fallback")
                 return rtaiResult.response
             }
-            
+
             throw error
         }
     }

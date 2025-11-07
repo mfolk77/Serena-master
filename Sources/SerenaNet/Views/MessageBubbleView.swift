@@ -32,7 +32,9 @@ struct MessageBubbleView: View {
                     VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
                         // Message bubble
                         Text(message.content)
-                            .font(.system(size: 14, design: .default))
+                            .dynamicFont(size: 14, weight: .regular, design: .default)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                             .background(

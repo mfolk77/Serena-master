@@ -10,11 +10,12 @@ struct ContentView: View {
     @State private var showingHelp = false
     @State private var showingOnboarding = false
     @State private var windowSize: CGSize = .zero
-    
+    @State private var textSizeMultiplier: Double = UserDefaults.standard.double(forKey: "SerenaNet.TextSizeMultiplier") == 0 ? 1.0 : UserDefaults.standard.double(forKey: "SerenaNet.TextSizeMultiplier")
+
     // Responsive breakpoints
     private var isCompact: Bool { windowSize.width < 800 }
     private var shouldAutoHideSidebar: Bool { windowSize.width < 600 }
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -44,7 +45,13 @@ struct ContentView: View {
                 }
             }
         }
+        .environment(\.textSizeMultiplier, textSizeMultiplier)
         .preferredColorScheme(themeManager.currentTheme.colorScheme)
+        .onReceive(NotificationCenter.default.publisher(for: .textSizeChanged)) { notification in
+            if let newValue = notification.object as? Double {
+                textSizeMultiplier = newValue
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
             withAnimation(AnimationPresets.sidebarToggle) {
                 showingSidebar.toggle()

@@ -7,7 +7,18 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var localLoggingEnabled: Bool = UserDefaults.standard.bool(forKey: "SerenaNet.LocalLogging")
-    
+    @State private var textSizeMultiplier: Double = UserDefaults.standard.double(forKey: "SerenaNet.TextSizeMultiplier") == 0 ? 1.0 : UserDefaults.standard.double(forKey: "SerenaNet.TextSizeMultiplier")
+
+    private var textSizeLabel: String {
+        let percentage = Int(textSizeMultiplier * 100)
+        switch textSizeMultiplier {
+        case 0.8..<0.95: return "\(percentage)% (Smaller)"
+        case 0.95..<1.05: return "\(percentage)% (Default)"
+        case 1.05...2.0: return "\(percentage)% (Larger)"
+        default: return "\(percentage)%"
+        }
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -30,6 +41,43 @@ struct SettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Text Size:")
+                            Spacer()
+                            Text(textSizeLabel)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Slider(
+                            value: $textSizeMultiplier,
+                            in: 0.8...2.0,
+                            step: 0.1
+                        )
+
+                        HStack(spacing: 12) {
+                            Button("Smaller") {
+                                textSizeMultiplier = max(0.8, textSizeMultiplier - 0.1)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Default") {
+                                textSizeMultiplier = 1.0
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Larger") {
+                                textSizeMultiplier = min(2.0, textSizeMultiplier + 0.1)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .font(.caption)
+
+                        Text("Adjust text size for better readability. This affects all text throughout the app.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 
@@ -470,6 +518,10 @@ struct SettingsView: View {
         }
         .onChange(of: configManager.userConfig) { _ in
             configManager.saveConfiguration()
+        }
+        .onChange(of: textSizeMultiplier) { newValue in
+            UserDefaults.standard.set(newValue, forKey: "SerenaNet.TextSizeMultiplier")
+            NotificationCenter.default.post(name: .textSizeChanged, object: newValue)
         }
     }
     
